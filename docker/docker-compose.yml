@@ -1,0 +1,84 @@
+# ============================================================================
+# FreeToken 容器编排（Docker Compose v2）
+# ============================================================================
+# 使用方式：
+#   1. 先确认 docker/daemon.json 里的 dockerDesktopLinuxEngine 已启动
+#   2. docker compose up -d
+#   3. docker compose logs -f          # 首次启动要下载权重，耐心等
+#   4. curl http://127.0.0.1:1919/v1/models
+#
+# ⚠️ 三个不能改的地方，每一条都对应一个真实故障：
+#   · 不要加 mem_limit / --memory —— 见 README 里的 #333 说明
+#   · ipc 必须是 host            —— 共享内存不够会让张量并行直接崩
+#   · 权重目录必须是 Linux 原生路径 —— 走 /mnt/d 挂载会慢到不可用
+# ============================================================================
+
+services:
+  freetoken:
+    image: freetoken:latest
+    container_name: freetoken-server
+
+    # 【必须】共享内存给足。Docker 默认 64MB，专家缓存和 KV 传输完全不够
+    ipc: host
+
+    # 【必须】pinned memory 锁定权限。
+    # FreeToken 的 CPU-GPU 协同靠页锁定内存做零拷贝传输，
+    # 容器默认拿不到 IPC_LOCK 权限，会被降级成普通内存（速度腰斩）
+    ulimits:
+      memlock: -1
+    cap_add:
+      - IPC_LOCK
+
+    ports:
+      - "1919:1919"
+
+    environment:
+      - HF_HOME=/models/hf
+      - HF_TOKEN=${HF_TOKEN:-}
+      # WSL2 下 CUDA pinned memory 有硬上限，加上这个让引擎自己适配
+      # 官方 CLI 文档注明 auto 模式就是为 Windows/WSL 设计的
+      - MOE_CPU_LAYERS=auto
+
+    volumes:
+      # 【关键】权重目录必须落在 WSL2 的 ext4 文件系统里。
+      # 如果写成 D:/models 这种 Windows 路径，Docker 会走 9p 协议跨系统读，
+      # 18GB 权重能读到几十分钟。这里用命名卷，实际落在
+      # D:\<数据盘> 下的 vhdx 中（原生 ext4，速度正常）
+      - freetoken-models:/models/hf
+
+    # 注意：这里刻意没有写 mem_limit / deploy.resources.limits.memory
+    # 原因见 README —— 加了会被 cgroup 内存检查的 bug 坑到 OOM
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    command:
+      - "--model"
+      - "${MODEL_NAME:-Qwen/Qwen3.6-35B-A3B}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "1919"
+      # auto 模式专为 Windows/WSL 设计，会自动规避 pinned memory 上限
+      - "--moe-cpu-layers"
+      - "auto"
+
+    # 首次启动要下载 18GB 权重 + JIT 编译内核，给足 10 分钟缓冲
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:1919/v1/models"]
+      interval: 30s
+      timeout: 5s
+      start_period: 600s
+      retries: 3
+
+    restart: unless-stopped
+
+volumes:
+  freetoken-models:
+    # 命名卷默认落在 Docker 数据盘。你的数据盘在 D:\<数据盘>
+    # 空间够（约 99GB 可用），不需要额外配置

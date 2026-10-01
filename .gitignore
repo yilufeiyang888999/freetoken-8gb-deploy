@@ -1,0 +1,18 @@
+# WorkBuddy 会话数据（绝不入库）
+.workbuddy/
+
+# Python
+__pycache__/
+*.pyc
+
+# 测试桩临时目录
+tests/.stub-tmp/
+
+# 模型权重与运行产物（21.85GB，永远不该进 git）
+*.safetensors
+models/
+*.log
+
+# 编辑器
+.vscode/
+.idea/

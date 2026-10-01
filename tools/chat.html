@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeToken 本地对话</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #e3e6ea;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-soft: #eff4ff;
+    --think: #8b5cf6;
+    --think-bg: #f6f3ff;
+    --err: #dc2626;
+    --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column;
+  }
+
+  header {
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 10px 16px; display: flex; align-items: center; gap: 14px;
+    flex-wrap: wrap; flex: 0 0 auto;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .sep { flex: 1; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--border);
+    padding: 3px 9px; border-radius: 999px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #cbd5e1; }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: var(--err); }
+
+  label.toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none;
+  }
+  label.toggle input { margin: 0; cursor: pointer; }
+
+  button {
+    font: inherit; font-size: 12.5px; cursor: pointer;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px;
+    padding: 5px 11px; transition: background .15s;
+  }
+  button:hover { background: var(--accent-soft); }
+
+  #chat {
+    flex: 1 1 auto; overflow-y: auto; padding: 20px 16px 8px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .wrap { max-width: 860px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+  .msg { display: flex; flex-direction: column; gap: 6px; }
+  .role { font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .04em; }
+  .bubble {
+    padding: 11px 14px; border-radius: 10px; line-height: 1.65;
+    font-size: 14px; white-space: pre-wrap; word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+  .user .bubble { background: var(--accent-soft); border: 1px solid #dbe6ff; align-self: flex-start; max-width: 88%; }
+  .assistant .bubble { background: var(--panel); border: 1px solid var(--border); }
+  .user { align-items: flex-end; }
+
+  .think {
+    background: var(--think-bg); border: 1px solid #e6dcff;
+    border-left: 3px solid var(--think);
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 8px;
+    font-size: 12.5px; color: #5b5470; line-height: 1.6;
+    white-space: pre-wrap; max-height: 220px; overflow-y: auto;
+  }
+  .think-head { font-size: 11px; font-weight: 600; color: var(--think); margin-bottom: 4px; }
+
+  .meta { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .cursor::after { content: "▍"; animation: blink 1s steps(2) infinite; color: var(--accent); }
+  @keyframes blink { 0%,50% { opacity: 1 } 51%,100% { opacity: 0 } }
+
+  .hint { text-align: center; color: var(--muted); font-size: 13px; margin: 30px 0; line-height: 1.9; }
+  .hint code { background: var(--panel); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .hint button { margin-top: 10px; }
+
+  .err { color: var(--err); font-size: 13px; background: #fef2f2; border: 1px solid #fecaca; padding: 10px 13px; border-radius: 8px; white-space: pre-wrap; }
+
+  footer {
+    flex: 0 0 auto; background: var(--panel); border-top: 1px solid var(--border);
+    padding: 12px 16px 14px;
+  }
+  .inputbar { max-width: 860px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
+  textarea {
+    flex: 1; font: inherit; font-size: 14px; resize: none; min-height: 44px; max-height: 190px;
+    padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel); color: var(--text); line-height: 1.5; outline: none;
+  }
+  textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  #send {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+    padding: 12px 20px; border-radius: 10px; font-weight: 500; min-width: 76px;
+  }
+  #send:hover { background: #1d4ed8; }
+  #send:disabled { opacity: .45; cursor: not-allowed; background: var(--accent); }
+  .foot-note { max-width: 860px; margin: 7px auto 0; font-size: 11px; color: var(--muted); text-align: right; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FreeToken 本地对话</h1>
+  <span class="pill"><span class="dot" id="statusDot"></span><span id="statusText">连接中…</span></span>
+  <span class="sep"></span>
+  <label class="toggle" title="Qwen3.6 默认先输出思维链，耗时可能翻几倍。对话 / 结构化任务建议关闭。">
+    <input type="checkbox" id="noThink" checked> 关闭思考
+  </label>
+  <button id="clearBtn">清空</button>
+</header>
+
+<div id="chat">
+  <div class="wrap" id="wrap">
+    <div class="hint" id="hint">
+      本地模型已就绪，直接提问即可。<br>
+      <span style="font-size:12px">上下文上限 <code>16384</code> tokens，超出会被截断。</span><br>
+      <button id="probeBtn">问一句「用三句话介绍你自己」</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="inputbar">
+    <textarea id="input" rows="1" placeholder="输入问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+    <button id="send">发送</button>
+  </div>
+  <div class="foot-note" id="footNote"></div>
+</footer>
+
+<script>
+// ---- 配置：改这里即可指向别的服务 ----
+const API_BASE = (location.protocol === "file:" || location.origin === "null")
+  ? "http://127.0.0.1:1919/v1"     // 直接双击打开 HTML 时
+  : location.origin + "/v1";        // 由网关托管时走同源
+
+const MAX_TOKENS = 2048;
+
+const el = (id) => document.getElementById(id);
+const wrap = el("wrap"), input = el("input"), sendBtn = el("send");
+const noThink = el("noThink"), statusDot = el("statusDot"), statusText = el("statusText");
+
+let MODEL = null;          // 从 /models 探测
+let history = [];          // 对话历史
+let busy = false;
+
+// ---------- 健康检查 ----------
+async function probe() {
+  try {
+    const r = await fetch(API_BASE + "/models");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    const ids = (j.data || []).map(m => m.id);
+    if (!ids.length) throw new Error("模型列表为空（后端 worker 可能已退出）");
+    MODEL = ids[0];
+    const m = j.data[0];
+    const ctx = m.max_model_len || m.context_length || "?";
+    statusDot.className = "dot on";
+    statusText.textContent = MODEL + " · 上下文 " + ctx;
+    return true;
+  } catch (e) {
+    statusDot.className = "dot off";
+    statusText.textContent = "未连接";
+    render({
+      cls: "err",
+      html: "连不上 " + API_BASE + "（" + e.message + "）\n\n" +
+        "排查：\n" +
+        "1. 服务起了吗？  →  WSL 里执行  ft ctl stats\n" +
+        "2. 是浏览器直开本页吗？那启动服务时需带  --cors-origins '*'\n" +
+        "3. 端口对吗？默认 1919"
+    });
+    return false;
+  }
+}
+
+// ---------- 渲染 ----------
+function render(node) {
+  el("hint")?.remove();
+  const d = document.createElement("div");
+  if (node.cls) d.className = node.cls;
+  if (node.html !== undefined) d.innerHTML = node.html.replace(/</g, "&lt;");
+  wrap.appendChild(d);
+  scroll();
+  return d;
+}
+
+function addMessage(role) {
+  const msg = document.createElement("div");
+  msg.className = "msg " + role;
+  msg.innerHTML = '<div class="role">' + (role === "user" ? "你" : "模型") + '</div>';
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  msg.appendChild(bubble);
+  el("hint")?.remove();
+  wrap.appendChild(msg);
+  scroll();
+  return { msg, bubble };
+}
+
+function scroll() { const c = el("chat"); c.scrollTop = c.scrollHeight; }
+
+// ---------- 发送 ----------
+async function send(text) {
+  if (busy) return;
+  if (!MODEL) { const ok = await probe(); if (!ok) return; }
+
+  text = (text !== undefined ? text : input.value).trim();
+  if (!text) return;
+
+  input.value = "";
+  input.style.height = "auto";
+  busy = true; sendBtn.disabled = true;
+
+  history.push({ role: "user", content: text });
+  const { bubble } = addMessage("user");
+  bubble.textContent = text;
+
+  const { bubble: out } = addMessage("assistant");
+  const thinkBox = document.createElement("div");
+  thinkBox.className = "think";
+  thinkBox.style.display = "none";
+  thinkBox.innerHTML = '<div class="think-head">思考中…</div><div class="think-body"></div>';
+  out.parentElement.insertBefore(thinkBox, out);
+
+  out.classList.add("cursor");
+
+  const payload = {
+    model: MODEL,
+    messages: history,
+    stream: true,
+    max_tokens: MAX_TOKENS,
+    temperature: 0.7,
+  };
+  if (noThink.checked) {
+    payload.chat_template_kwargs = { enable_thinking: false };
+  }
+
+  const t0 = performance.now();
+  let firstAt = null, outTokens = 0, thinkChars = 0;
+
+  try {
+    const resp = await fetch(API_BASE + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error("HTTP " + resp.status + "\n" + body.slice(0, 600));
+    }
+
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+
+      const lines = buf.split("\n");
+      buf = lines.pop();
+
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line.startsWith("data:")) continue;
+        const payloadStr = line.slice(5).trim();
+        if (payloadStr === "[DONE]") continue;
+
+        let chunk;
+        try { chunk = JSON.parse(payloadStr); } catch { continue; }
+
+        const delta = (chunk.choices && chunk.choices[0] && chunk.choices[0].delta) || {};
+        if (delta.reasoning_content) {
+          if (firstAt === null) firstAt = performance.now();
+          thinkChars += delta.reasoning_content.length;
+          thinkBox.style.display = "block";
+          thinkBox.querySelector(".think-body").textContent += delta.reasoning_content;
+        }
+        if (delta.content) {
+          if (firstAt === null) firstAt = performance.now();
+          out.textContent += delta.content;
+          outTokens++;
+          scroll();
+        }
+      }
+    }
+
+    out.classList.remove("cursor");
+
+    if (!out.textContent && !thinkChars) {
+      out.textContent = "（空回复）";
+    }
+
+    // 统计
+    const total = (performance.now() - t0) / 1000;
+    const ttft = firstAt ? ((firstAt - t0) / 1000).toFixed(2) + " s" : "—";
+    const tps = outTokens > 1 && total > 0 ? (outTokens / total).toFixed(1) : "—";
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = "TTFT " + ttft + " · 总耗时 " + total.toFixed(1) + " s · 约 " + tps + " tok/s"
+      + (thinkChars ? " · 思考 " + thinkChars + " 字" : "");
+    out.parentElement.appendChild(meta);
+
+    history.push({ role: "assistant", content: out.textContent });
+  } catch (e) {
+    out.classList.remove("cursor");
+    out.textContent = "";
+    const err = document.createElement("div");
+    err.className = "err";
+    err.textContent = "请求失败：" + e.message +
+      "\n\n若是 CORS 报错（控制台出现 blocked by CORS policy）：\n" +
+      "服务需以 --cors-origins '*' 启动（serve_freetoken.sh 已默认加上）。";
+    out.parentElement.appendChild(err);
+  } finally {
+    busy = false; sendBtn.disabled = false; input.focus();
+  }
+}
+
+// ---------- 事件 ----------
+sendBtn.onclick = () => send();
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 190) + "px";
+});
+el("clearBtn").onclick = () => {
+  history = [];
+  wrap.innerHTML = '<div class="hint" id="hint">对话已清空，继续提问即可。</div>';
+};
+el("probeBtn").onclick = () => send("用三句话介绍你自己");
+
+// ---------- 启动 ----------
+(async () => {
+  const ok = await probe();
+  if (ok) {
+    el("footNote").textContent = "服务 " + API_BASE + " · " + MODEL;
+  }
+})();
+</script>
+</body>
+</html>
